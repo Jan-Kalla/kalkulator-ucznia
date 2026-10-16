@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculateGrade, Task, Score } from './utils/calculator';
-import { Calculator, ChevronRight } from 'lucide-react';
+import { Calculator, ChevronRight, ChevronDown, Cpu, GraduationCap, Sparkles, Zap, Search, Check } from 'lucide-react';
 
 interface CloudWork {
   id: number;
@@ -28,7 +28,29 @@ export default function Home() {
   const [result, setResult] = useState<{ earned: number; max: number; percentage: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Pobieranie prac z chmury
+  // --- STANY WYSZUKIWARKI PRAC ---
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isWorkDropdownOpen, setIsWorkDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Nasłuchiwanie kliknięcia poza wyszukiwarką, aby ją zamknąć
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsWorkDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Reset wyszukiwarki przy zmianie klasy
+  useEffect(() => {
+    setSearchQuery('');
+    setIsWorkDropdownOpen(false);
+  }, [selectedClass]);
+  // -------------------------------
+
   useEffect(() => {
     async function fetchWorks() {
       const { data, error } = await supabase.from('cloud_works').select('*');
@@ -42,7 +64,6 @@ export default function Home() {
     fetchWorks();
   }, []);
 
-  // Pobieranie zadań po wybraniu pracy
   useEffect(() => {
     async function fetchTasks() {
       if (!selectedWorkId) {
@@ -79,167 +100,291 @@ export default function Home() {
     setResult(null);
   }, [selectedWorkId]);
 
-  // ULEPSZONA FUNKCJA: Walidacja Max i czyszczenie pozostałych pól
   const handleScoreChange = (taskNumber: number, level: 'scoreL1' | 'scoreL2' | 'scoreL3', value: string, maxLimit: number) => {
-    // Obsługa usunięcia wartości z pola
     if (value === '') {
       setScores(prev => {
         const existing = prev.find(s => s.taskNumber === taskNumber);
-        if (existing) {
-          return prev.map(s => s.taskNumber === taskNumber ? { ...s, [level]: undefined } : s);
-        }
+        if (existing) return prev.map(s => s.taskNumber === taskNumber ? { ...s, [level]: undefined } : s);
         return prev;
       });
       return;
     }
 
-    // Zamiana tekstu na liczbę (wspieramy kropkę i przecinek)
     const numValue = parseFloat(value.replace(',', '.'));
-    
-    // Zablokuj literki i liczby ujemne
-    if (isNaN(numValue) || numValue < 0) return;
-
-    // Zablokuj wartość wyższą niż Max dla danego poziomu
-    if (numValue > maxLimit) return;
+    if (isNaN(numValue) || numValue < 0 || numValue > maxLimit) return;
 
     setScores(prev => {
       const existing = prev.find(s => s.taskNumber === taskNumber);
-      
-      // Mutual Exclusivity: Wpisanie oceny resetuje pozostałe dwa poziomy do undefined
       const newScore = {
         taskNumber,
         scoreL1: level === 'scoreL1' ? numValue : undefined,
         scoreL2: level === 'scoreL2' ? numValue : undefined,
         scoreL3: level === 'scoreL3' ? numValue : undefined,
       };
-
-      if (existing) {
-        return prev.map(s => s.taskNumber === taskNumber ? newScore : s);
-      }
+      if (existing) return prev.map(s => s.taskNumber === taskNumber ? newScore : s);
       return [...prev, newScore];
     });
   };
 
-  const handleCalculate = () => {
-    const filteredTasks = tasks.filter(t => t.groupName === selectedGroup);
-    const res = calculateGrade(filteredTasks, scores);
-    setResult(res);
-  };
-
   const currentTasks = tasks.filter(t => t.groupName === selectedGroup);
 
+  const handleCalculate = () => {
+    setResult(calculateGrade(currentTasks, scores));
+  };
+
+  const handleFillMaxL3 = () => {
+    const newScores = currentTasks.map(task => {
+      if (task.maxL3 > 0) {
+        return {
+          taskNumber: task.taskNumber,
+          scoreL1: undefined,
+          scoreL2: undefined,
+          scoreL3: task.maxL3,
+        };
+      }
+      return scores.find(s => s.taskNumber === task.taskNumber) || { taskNumber: task.taskNumber };
+    });
+    setScores(newScores as Score[]);
+  };
+
+  const handleEnterPress = (e: React.KeyboardEvent<HTMLInputElement>, currentTaskIndex: number, levelKey: string) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      for (let i = currentTaskIndex + 1; i < currentTasks.length; i++) {
+        const nextInput = document.getElementById(`input-${i}-${levelKey}`) as HTMLInputElement | null;
+        if (nextInput) {
+          nextInput.focus();
+          nextInput.select();
+          return;
+        }
+      }
+      handleCalculate();
+    }
+  };
+
+  // Filtrowanie prac dla wyszukiwarki
+  const filteredWorks = works.filter(w => 
+    w.class_name === selectedClass && 
+    (w.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+     w.work_type.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
   return (
-    <main className="min-h-screen p-4 md:p-8 max-w-2xl mx-auto flex flex-col gap-6">
-      <header className="flex items-center gap-3 border-b border-gray-800 pb-4">
-        <Calculator className="w-8 h-8 text-teal-400" />
-        <h1 className="text-2xl font-bold text-gray-100">Kalkulator Ocen</h1>
-      </header>
+    <main className="min-h-screen relative bg-slate-950 text-slate-200 selection:bg-cyan-500/30 overflow-hidden pb-12">
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none"></div>
 
-      {/* SEKCJA WYBORU */}
-      <section className="flex flex-col gap-4 bg-[#1E1E1E] p-5 rounded-xl border border-gray-800">
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">1. Wybierz klasę</label>
-          <select 
-            className="w-full bg-[#2D2D30] border border-gray-700 rounded-md p-3 text-white focus:border-teal-500 focus:outline-none"
-            value={selectedClass} 
-            onChange={(e) => { setSelectedClass(e.target.value); setSelectedWorkId(''); }}
-          >
-            <option value="">-- wybierz klasę --</option>
-            {classes.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-
-        {selectedClass && (
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">2. Wybierz pracę pisemną</label>
-            <select 
-              className="w-full bg-[#2D2D30] border border-gray-700 rounded-md p-3 text-white focus:border-teal-500 focus:outline-none"
-              value={selectedWorkId} 
-              onChange={(e) => setSelectedWorkId(Number(e.target.value))}
-            >
-              <option value="">-- wybierz pracę --</option>
-              {works.filter(w => w.class_name === selectedClass).map(w => (
-                <option key={w.id} value={w.id}>[{w.work_type.toUpperCase()}] {w.title}</option>
-              ))}
-            </select>
+      <div className="relative max-w-2xl mx-auto p-4 md:p-8 flex flex-col gap-8">
+        <header className="flex flex-col items-center text-center gap-3 pt-6 pb-4 border-b border-slate-800/50">
+          <div className="inline-flex items-center justify-center p-3 bg-slate-900 border border-slate-700 rounded-2xl shadow-[0_0_20px_-5px_rgba(6,182,212,0.3)] mb-2">
+            <Cpu className="w-8 h-8 text-cyan-400" />
           </div>
-        )}
-
-        {selectedWorkId && groups.length > 1 && (
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">3. Wybierz grupę</label>
-            <select 
-              className="w-full bg-[#2D2D30] border border-gray-700 rounded-md p-3 text-white focus:border-teal-500 focus:outline-none"
-              value={selectedGroup} 
-              onChange={(e) => { setSelectedGroup(e.target.value); setScores([]); setResult(null); }}
-            >
-              {groups.map(g => <option key={g} value={g}>Grupa {g}</option>)}
-            </select>
+          <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400">
+            Kalkulator Ocen
+          </h1>
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700/50 text-xs font-medium text-slate-400 backdrop-blur-sm">
+            <GraduationCap className="w-3.5 h-3.5 text-blue-400" />
+            <span>Stworzone dla uczniów ŚlTZN</span>
           </div>
-        )}
-      </section>
+        </header>
 
-      {/* SEKCJA WPISYWANIA PUNKTÓW */}
-      {selectedWorkId && currentTasks.length > 0 && (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-xl font-bold text-gray-200">Wpisz swoje punkty:</h2>
-          
-          <div className="flex flex-col gap-3">
-            {currentTasks.map((task) => (
-              <div key={task.taskNumber} className="bg-[#1E1E1E] p-4 rounded-xl border border-gray-800 flex flex-col gap-3">
-                <div className="font-bold text-teal-400">Zadanie {task.taskNumber}</div>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { key: 'scoreL1', max: task.maxL1, label: 'Poz I' },
-                    { key: 'scoreL2', max: task.maxL2, label: 'Poz II' },
-                    { key: 'scoreL3', max: task.maxL3, label: 'Poz III' },
-                  ].map((level) => (
-                    level.max > 0 ? (
-                      <div key={level.key} className="flex flex-col gap-1">
-                        <span className="text-xs text-gray-400">{level.label} (max {level.max})</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max={level.max}
-                          step="0.5"
-                          className="w-full bg-[#2D2D30] border border-gray-700 rounded-md p-2 text-center text-white focus:border-teal-500 focus:outline-none"
-                          value={scores.find(s => s.taskNumber === task.taskNumber)?.[level.key as keyof Score] ?? ''}
-                          onChange={(e) => handleScoreChange(task.taskNumber, level.key as any, e.target.value, level.max)}
-                        />
-                      </div>
-                    ) : (
-                      <div key={level.key} className="flex flex-col gap-1 opacity-20">
-                        <span className="text-xs text-gray-400">{level.label}</span>
-                        <div className="w-full bg-[#1A1A1A] border border-gray-800 rounded-md p-2 text-center text-gray-600">-</div>
-                      </div>
-                    )
-                  ))}
+        <section className="flex flex-col gap-5 bg-slate-900/60 backdrop-blur-md p-6 rounded-3xl border border-slate-700/50 shadow-xl">
+          <div className="space-y-5">
+            {/* WYBÓR KLASY */}
+            <div>
+              <label className="block text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 ml-1">Krok 1: Klasa</label>
+              <div className="relative">
+                <select 
+                  className="w-full appearance-none bg-slate-950 border border-slate-700 text-slate-200 rounded-xl p-4 pr-10 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none transition-all shadow-inner"
+                  value={selectedClass} 
+                  onChange={(e) => { setSelectedClass(e.target.value); setSelectedWorkId(''); }}
+                >
+                  <option value="">-- wybierz profil --</option>
+                  {classes.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-400">
+                  <ChevronDown className="w-5 h-5" />
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
 
-          <button 
-            onClick={handleCalculate}
-            className="mt-4 bg-teal-600 hover:bg-teal-500 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-colors"
-          >
-            Oblicz mój wynik <ChevronRight className="w-5 h-5" />
-          </button>
-        </section>
-      )}
+            {/* WYBÓR PRACY Z WYSZUKIWARKĄ */}
+            {selectedClass && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-300" ref={dropdownRef}>
+                <label className="block text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 ml-1">Krok 2: Sprawdzian</label>
+                <div className="relative">
+                  <div 
+                    className={`w-full bg-slate-950 border text-slate-200 rounded-xl p-4 pr-10 cursor-pointer shadow-inner flex items-center justify-between transition-all ${isWorkDropdownOpen ? 'border-cyan-500 ring-1 ring-cyan-500' : 'border-slate-700 hover:border-slate-500'}`}
+                    onClick={() => setIsWorkDropdownOpen(!isWorkDropdownOpen)}
+                  >
+                    <span className={`truncate ${!selectedWorkId ? 'text-slate-400' : ''}`}>
+                      {selectedWorkId 
+                        ? (() => {
+                            const w = works.find(x => x.id === selectedWorkId);
+                            return w ? `[${w.work_type.toUpperCase()}] ${w.title}` : '';
+                          })()
+                        : '-- wyszukaj arkusz --'}
+                    </span>
+                    <div className="absolute inset-y-0 right-0 flex items-center px-4 text-slate-400 pointer-events-none">
+                      <ChevronDown className={`w-5 h-5 transition-transform duration-300 ${isWorkDropdownOpen ? 'rotate-180 text-cyan-400' : ''}`} />
+                    </div>
+                  </div>
 
-      {/* SEKCJA WYNIKU */}
-      {result && (
-        <section className="bg-gradient-to-br from-[#1E2E1E] to-[#1E1E1E] p-6 rounded-xl border border-[#4CAF50] flex flex-col items-center justify-center gap-2 mt-4 animate-in fade-in slide-in-from-bottom-4">
-          <span className="text-gray-400 text-sm font-semibold uppercase tracking-wider">Twój przewidywany wynik</span>
-          <div className="text-5xl font-bold text-[#81C784]">
-            {result.percentage}%
-          </div>
-          <div className="text-gray-300 mt-2">
-            {result.earned} / {result.max} pkt
+                  {/* Rozwijana lista z wyszukiwarką */}
+                  {isWorkDropdownOpen && (
+                    <div className="absolute z-50 w-full mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                      <div className="p-3 border-b border-slate-800 flex items-center gap-3 bg-slate-950/80">
+                        <Search className="w-5 h-5 text-cyan-500" />
+                        <input
+                          type="text"
+                          className="w-full bg-transparent border-none text-slate-200 focus:ring-0 focus:outline-none placeholder-slate-500"
+                          placeholder="Wpisz tytuł lub rodzaj..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                      
+                      <ul className="max-h-60 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-thumb]:rounded-full">
+                        {filteredWorks.length > 0 ? (
+                          filteredWorks.map(w => (
+                            <li 
+                              key={w.id}
+                              className={`px-5 py-3.5 cursor-pointer text-sm transition-colors flex items-center justify-between border-b border-slate-800/50 last:border-0 ${
+                                selectedWorkId === w.id 
+                                ? 'bg-cyan-900/30 text-cyan-300' 
+                                : 'hover:bg-slate-800 text-slate-300'
+                              }`}
+                              onClick={() => {
+                                setSelectedWorkId(w.id);
+                                setIsWorkDropdownOpen(false);
+                                setSearchQuery(''); // Czyści wyszukiwarkę po wybraniu
+                              }}
+                            >
+                              <span className="truncate pr-4 font-medium">
+                                <span className="text-slate-500 mr-2 text-xs">[{w.work_type.toUpperCase()}]</span> 
+                                {w.title}
+                              </span>
+                              {selectedWorkId === w.id && <Check className="w-5 h-5 text-cyan-400 shrink-0" />}
+                            </li>
+                          ))
+                        ) : (
+                          <li className="px-5 py-6 text-sm text-slate-500 text-center flex flex-col items-center gap-2">
+                            <Search className="w-6 h-6 text-slate-600 mb-1" />
+                            Nie znaleziono pracy dla: "{searchQuery}"
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* WYBÓR GRUPY */}
+            {selectedWorkId && groups.length > 1 && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                <label className="block text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 ml-1">Krok 3: Grupa</label>
+                <div className="relative">
+                  <select 
+                    className="w-full appearance-none bg-slate-950 border border-slate-700 text-slate-200 rounded-xl p-4 pr-10 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none transition-all shadow-inner"
+                    value={selectedGroup} 
+                    onChange={(e) => { setSelectedGroup(e.target.value); setScores([]); setResult(null); }}
+                  >
+                    {groups.map(g => <option key={g} value={g}>Grupa {g}</option>)}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-400">
+                    <ChevronDown className="w-5 h-5" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </section>
-      )}
+
+        {/* ... (Reszta kodu - Wprowadzanie punktów i wyniki - bez zmian) ... */}
+        {selectedWorkId && currentTasks.length > 0 && (
+          <section className="flex flex-col gap-4 animate-in fade-in duration-500">
+            <div className="flex items-center gap-3 ml-2 mb-2">
+              <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                Wprowadź punkty
+              </h2>
+              <span className="flex-1 h-px bg-slate-800"></span>
+              <button
+                onClick={handleFillMaxL3}
+                className="text-xs font-semibold text-cyan-400 bg-cyan-950/40 border border-cyan-800/60 hover:bg-cyan-900/60 hover:border-cyan-500 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shadow-[0_0_10px_-2px_rgba(6,182,212,0.2)]"
+                title="Wypełnia Poz III maksymalnymi punktami"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                Max Poz III
+              </button>
+            </div>
+            
+            <div className="grid gap-4">
+              {currentTasks.map((task, taskIndex) => (
+                <div key={task.taskNumber} className="bg-slate-900/40 p-5 rounded-2xl border border-slate-800 hover:border-slate-600 transition-colors shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="font-bold text-lg text-slate-200">Zadanie {task.taskNumber}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 md:gap-4">
+                    {[
+                      { key: 'scoreL1', max: task.maxL1, label: 'Poz I' },
+                      { key: 'scoreL2', max: task.maxL2, label: 'Poz II' },
+                      { key: 'scoreL3', max: task.maxL3, label: 'Poz III' },
+                    ].map((level) => (
+                      level.max > 0 ? (
+                        <div key={level.key} className="flex flex-col gap-1.5 relative group">
+                          <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">{level.label} (max {level.max})</span>
+                          <input
+                            id={`input-${taskIndex}-${level.key}`}
+                            type="number"
+                            min="0"
+                            max={level.max}
+                            step="0.5"
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-center text-lg font-semibold text-cyan-50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 focus:outline-none transition-all placeholder-slate-700"
+                            placeholder="-"
+                            value={scores.find(s => s.taskNumber === task.taskNumber)?.[level.key as keyof Score] ?? ''}
+                            onChange={(e) => handleScoreChange(task.taskNumber, level.key as any, e.target.value, level.max)}
+                            onKeyDown={(e) => handleEnterPress(e, taskIndex, level.key)}
+                          />
+                        </div>
+                      ) : (
+                        <div key={level.key} className="flex flex-col gap-1.5 opacity-30 cursor-not-allowed">
+                          <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">{level.label}</span>
+                          <div className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-center text-slate-600">-</div>
+                        </div>
+                      )
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button 
+              onClick={handleCalculate}
+              className="mt-6 group relative w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-lg py-5 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-[0_0_30px_-5px_rgba(6,182,212,0.4)] hover:shadow-[0_0_40px_-5px_rgba(6,182,212,0.6)]"
+            >
+              <Sparkles className="w-5 h-5 text-cyan-200" />
+              Oblicz Wynik Końcowy
+              <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
+            </button>
+          </section>
+        )}
+
+        {result && (
+          <section className="relative overflow-hidden bg-slate-900 border border-cyan-500/30 p-8 rounded-3xl flex flex-col items-center justify-center gap-3 mt-4 animate-in zoom-in-95 duration-500 shadow-2xl">
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <span className="relative z-10 text-cyan-400 text-xs font-bold uppercase tracking-[0.2em]">Twój przewidywany wynik</span>
+            <div className="relative z-10 text-7xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-white via-cyan-100 to-cyan-400 drop-shadow-sm">
+              {result.percentage}%
+            </div>
+            <div className="relative z-10 text-slate-400 font-medium text-lg mt-2 flex items-center gap-2">
+              Zdobyte <span className="text-white font-bold">{result.earned}</span> z <span className="text-white font-bold">{result.max}</span> pkt
+            </div>
+          </section>
+        )}
+      </div>
     </main>
   );
 }
