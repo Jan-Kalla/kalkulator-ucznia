@@ -37,6 +37,10 @@ export default function Home() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState(false);
 
+  // --- STANY ZAPISÓW NA POPRAWĘ ---
+  const [journalNumber, setJournalNumber] = useState('');
+  const [signupStatus, setSignupStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'exists'>('idle');
+
   // Przechwytywanie gotowości do instalacji
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: any) => {
@@ -198,6 +202,34 @@ export default function Home() {
      w.work_type.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  const handleRetakeSignup = async () => {
+    if (!selectedWorkId || !selectedClass || !journalNumber) return;
+    setSignupStatus('loading');
+
+    const num = parseInt(journalNumber);
+    if (isNaN(num) || num <= 0) {
+      setSignupStatus('error');
+      return;
+    }
+
+    const { error } = await supabase.from('retake_signups').insert({
+      work_id: selectedWorkId,
+      class_name: selectedClass,
+      journal_number: num
+    });
+
+    if (error) {
+      if (error.code === '23505') { // Kod błędu unikalności (UNIQUE constraint)
+        setSignupStatus('exists');
+      } else {
+        setSignupStatus('error');
+      }
+    } else {
+      setSignupStatus('success');
+      setJournalNumber(''); // Czyszczenie po udanym zapisie
+    }
+  };
+
   return (
     <main className="min-h-screen relative bg-slate-950 text-slate-200 selection:bg-cyan-500/30 overflow-hidden pb-12">
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none"></div>
@@ -205,7 +237,7 @@ export default function Home() {
       <div className="relative max-w-2xl mx-auto p-4 md:p-8 flex flex-col gap-8">
         <header className="flex flex-col items-center text-center gap-4 pt-6 pb-4 border-b border-slate-800/50">
           <div className="inline-flex items-center justify-center p-3 bg-slate-900 border border-slate-700 rounded-2xl shadow-[0_0_20px_-5px_rgba(6,182,212,0.3)] mb-1">
-            <Cpu className="w-8 h-8 text-cyan-400" />
+            <Calculator className="w-8 h-8 text-cyan-400" />
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400">
             Kalkulator punktów
@@ -253,7 +285,7 @@ export default function Home() {
             {/* WYBÓR PRACY Z WYSZUKIWARKĄ */}
             {selectedClass && (
               <div className="animate-in fade-in slide-in-from-top-2 duration-300" ref={dropdownRef}>
-                <label className="block text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 ml-1">Krok 2: Sprawdzian</label>
+                <label className="block text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 ml-1">Krok 2: Tytuł oceny</label>
                 <div className="relative">
                   <div 
                     className={`w-full bg-slate-950 border text-slate-200 rounded-xl p-4 pr-10 cursor-pointer shadow-inner flex items-center justify-between transition-all ${isWorkDropdownOpen ? 'border-cyan-500 ring-1 ring-cyan-500' : 'border-slate-700 hover:border-slate-500'}`}
@@ -430,6 +462,50 @@ export default function Home() {
             
             <div className="relative z-10 text-slate-400 font-medium text-lg mt-2 flex items-center gap-2">
               Przeliczenie: <span className="text-cyan-400 font-bold text-2xl">{result.percentage}%</span>
+            </div>
+          </section>
+        )}
+
+        {/* SEKCJA ZAPISU NA POPRAWĘ */}
+        {selectedWorkId && (
+          <section className="relative overflow-hidden bg-slate-900/60 backdrop-blur-md border border-slate-700/50 p-6 rounded-3xl mt-4 shadow-xl">
+            <div className="flex flex-col gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-200 flex items-center gap-2">
+                  Chcesz poprawić tę pracę?
+                </h3>
+                <p className="text-sm text-slate-400 mt-1">
+                  Wpisz swój numer z dziennika, aby zapisać się na listę poprawkową u nauczyciela.
+                </p>
+              </div>
+
+              <div className="flex gap-3 items-stretch">
+                <input
+                  type="number"
+                  min="1"
+                  max="40"
+                  placeholder="Nr"
+                  className="w-20 bg-slate-950 border border-slate-700 rounded-xl p-3 text-center text-lg font-bold text-cyan-50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 focus:outline-none transition-all placeholder-slate-600"
+                  value={journalNumber}
+                  onChange={(e) => setJournalNumber(e.target.value)}
+                  disabled={signupStatus === 'loading' || signupStatus === 'success'}
+                />
+                <button
+                  onClick={handleRetakeSignup}
+                  disabled={!journalNumber || signupStatus === 'loading' || signupStatus === 'success'}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold rounded-xl border border-slate-700 hover:border-cyan-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {signupStatus === 'loading' ? 'Zapisywanie...' : 
+                   signupStatus === 'success' ? 'Zapisanio pomyślnie!' : 'Zapisz mnie na poprawę'}
+                </button>
+              </div>
+
+              {signupStatus === 'exists' && (
+                <p className="text-xs text-amber-400 font-medium">Twój numer jest już na liście do tej pracy.</p>
+              )}
+              {signupStatus === 'error' && (
+                <p className="text-xs text-red-400 font-medium">Wystąpił błąd. Spróbuj ponownie.</p>
+              )}
             </div>
           </section>
         )}
