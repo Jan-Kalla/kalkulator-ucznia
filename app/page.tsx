@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculateGrade, Task, Score } from './utils/calculator';
-import { Calculator, ChevronRight, ChevronDown, Cpu, GraduationCap, Sparkles, Zap, Search, Check } from 'lucide-react';
+import { Calculator, ChevronRight, ChevronDown, Cpu, GraduationCap, Sparkles, Zap, Search, Check, Download } from 'lucide-react';
 
 interface CloudWork {
   id: number;
@@ -33,6 +33,37 @@ export default function Home() {
   const [isWorkDropdownOpen, setIsWorkDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // --- STANY INSTALACJI PWA ---
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
+  // Przechwytywanie gotowości do instalacji
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      // Zapobiega automatycznemu wyskakiwaniu paska na mobile
+      e.preventDefault();
+      // Zapisujemy event, aby wywołać go później po kliknięciu naszego przycisku
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    // Wyświetla systemowy monit o instalację
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    
+    if (outcome === 'accepted') {
+      console.log('Użytkownik zainstalował aplikację');
+      setIsInstallable(false);
+      setDeferredPrompt(null);
+    }
+  };
+
   // Nasłuchiwanie kliknięcia poza wyszukiwarką, aby ją zamknąć
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -49,7 +80,6 @@ export default function Home() {
     setSearchQuery('');
     setIsWorkDropdownOpen(false);
   }, [selectedClass]);
-  // -------------------------------
 
   useEffect(() => {
     async function fetchWorks() {
@@ -162,7 +192,6 @@ export default function Home() {
     }
   };
 
-  // Filtrowanie prac dla wyszukiwarki
   const filteredWorks = works.filter(w => 
     w.class_name === selectedClass && 
     (w.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -174,16 +203,30 @@ export default function Home() {
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none"></div>
 
       <div className="relative max-w-2xl mx-auto p-4 md:p-8 flex flex-col gap-8">
-        <header className="flex flex-col items-center text-center gap-3 pt-6 pb-4 border-b border-slate-800/50">
-          <div className="inline-flex items-center justify-center p-3 bg-slate-900 border border-slate-700 rounded-2xl shadow-[0_0_20px_-5px_rgba(6,182,212,0.3)] mb-2">
+        <header className="flex flex-col items-center text-center gap-4 pt-6 pb-4 border-b border-slate-800/50">
+          <div className="inline-flex items-center justify-center p-3 bg-slate-900 border border-slate-700 rounded-2xl shadow-[0_0_20px_-5px_rgba(6,182,212,0.3)] mb-1">
             <Cpu className="w-8 h-8 text-cyan-400" />
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400">
-            Kalkulator Ocen
+            Kalkulator punktów
           </h1>
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700/50 text-xs font-medium text-slate-400 backdrop-blur-sm">
-            <GraduationCap className="w-3.5 h-3.5 text-blue-400" />
-            <span>Stworzone dla uczniów ŚlTZN</span>
+          
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/50 border border-slate-700/50 text-xs font-medium text-slate-400 backdrop-blur-sm">
+              <GraduationCap className="w-3.5 h-3.5 text-blue-400" />
+              <span>Stworzone dla uczniów Śl.TZN</span>
+            </div>
+
+            {/* NASZ NOWY PRZYCISK DO INSTALACJI (Pokazuje się tylko, jeśli apka nie jest jeszcze zainstalowana) */}
+            {isInstallable && (
+              <button 
+                onClick={handleInstallClick}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-950/40 border border-cyan-800 hover:bg-cyan-900/60 hover:border-cyan-500 text-xs font-bold text-cyan-400 transition-all shadow-[0_0_10px_-2px_rgba(6,182,212,0.2)] animate-in zoom-in-95"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Dodaj do ekranu
+              </button>
+            )}
           </div>
         </header>
 
@@ -301,7 +344,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ... (Reszta kodu - Wprowadzanie punktów i wyniki - bez zmian) ... */}
         {selectedWorkId && currentTasks.length > 0 && (
           <section className="flex flex-col gap-4 animate-in fade-in duration-500">
             <div className="flex items-center gap-3 ml-2 mb-2">
@@ -375,12 +417,19 @@ export default function Home() {
             <div className="absolute -top-24 -right-24 w-48 h-48 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none"></div>
             <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl pointer-events-none"></div>
 
-            <span className="relative z-10 text-cyan-400 text-xs font-bold uppercase tracking-[0.2em]">Twój przewidywany wynik</span>
-            <div className="relative z-10 text-7xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-white via-cyan-100 to-cyan-400 drop-shadow-sm">
-              {result.percentage}%
+            <span className="relative z-10 text-cyan-400 text-xs font-bold uppercase tracking-[0.2em]">Twój wynik punktowy</span>
+            
+            <div className="relative z-10 flex items-baseline gap-2 drop-shadow-sm">
+              <span className="text-7xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-white via-cyan-100 to-cyan-400">
+                {result.earned}
+              </span>
+              <span className="text-4xl font-bold text-slate-500 tracking-tight">
+                / {result.max}
+              </span>
             </div>
+            
             <div className="relative z-10 text-slate-400 font-medium text-lg mt-2 flex items-center gap-2">
-              Zdobyte <span className="text-white font-bold">{result.earned}</span> z <span className="text-white font-bold">{result.max}</span> pkt
+              Przeliczenie: <span className="text-cyan-400 font-bold text-2xl">{result.percentage}%</span>
             </div>
           </section>
         )}
