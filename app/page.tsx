@@ -467,7 +467,7 @@ export default function Home() {
         )}
 
         {/* SEKCJA ZAPISU NA POPRAWĘ */}
-        {selectedWorkId && (
+        {/* {selectedWorkId && (
           <section className="relative overflow-hidden bg-slate-900/60 backdrop-blur-md border border-slate-700/50 p-6 rounded-3xl mt-4 shadow-xl">
             <div className="flex flex-col gap-4">
               <div>
@@ -508,7 +508,7 @@ export default function Home() {
               )}
             </div>
           </section>
-        )}
+        )} */}
       </div>
     </main>
   );
