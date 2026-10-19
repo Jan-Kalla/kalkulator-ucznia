@@ -163,7 +163,10 @@ export default function Home() {
   const currentTasks = tasks.filter(t => t.groupName === selectedGroup);
 
   const handleCalculate = () => {
-    setResult(calculateGrade(currentTasks, scores));
+    const work = works.find(w => w.id === selectedWorkId);
+    const M = work ? work.max_points : 0; // Pobranie globalnego M pracy
+    
+    setResult(calculateGrade(currentTasks, scores, M));
   };
 
   const handleFillMaxL3 = () => {
